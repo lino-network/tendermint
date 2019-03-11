@@ -21,17 +21,22 @@ func init() {
 var _ DB = (*CLevelDB)(nil)
 
 type CLevelDB struct {
-	db     *levigo.DB
-	ro     *levigo.ReadOptions
-	wo     *levigo.WriteOptions
-	woSync *levigo.WriteOptions
+	db           *levigo.DB
+	ro           *levigo.ReadOptions
+	wo           *levigo.WriteOptions
+	woSync       *levigo.WriteOptions
+	cache        *levigo.Cache
+	filterPolicy *levigo.FilterPolicy
 }
 
 func NewCLevelDB(name string, dir string) (*CLevelDB, error) {
 	dbPath := filepath.Join(dir, name+".db")
 
+	cache := levigo.NewLRUCache(100 * 1024 * 1024) // XXX(yumin): let's try use a smaller cache.
+	filter := levigo.NewBloomFilter(10)
 	opts := levigo.NewOptions()
-	opts.SetCache(levigo.NewLRUCache(1 << 30))
+	opts.SetCache(cache)
+	opts.SetFilterPolicy(filter)
 	opts.SetCreateIfMissing(true)
 	db, err := levigo.Open(dbPath, opts)
 	if err != nil {
@@ -42,10 +47,12 @@ func NewCLevelDB(name string, dir string) (*CLevelDB, error) {
 	woSync := levigo.NewWriteOptions()
 	woSync.SetSync(true)
 	database := &CLevelDB{
-		db:     db,
-		ro:     ro,
-		wo:     wo,
-		woSync: woSync,
+		db:           db,
+		ro:           ro,
+		wo:           wo,
+		woSync:       woSync,
+		cache:        cache,
+		filterPolicy: filter,
 	}
 	return database, nil
 }
@@ -113,6 +120,8 @@ func (db *CLevelDB) Close() {
 	db.ro.Close()
 	db.wo.Close()
 	db.woSync.Close()
+	db.cache.Close()
+	db.filterPolicy.Close()
 }
 
 // Implements DB.

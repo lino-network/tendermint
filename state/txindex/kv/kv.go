@@ -7,11 +7,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
 	cmn "github.com/tendermint/tendermint/libs/common"
 	dbm "github.com/tendermint/tendermint/libs/db"
+	"github.com/tendermint/tendermint/libs/log"
 
 	"github.com/tendermint/tendermint/libs/pubsub/query"
 	"github.com/tendermint/tendermint/state/txindex"
@@ -20,6 +22,7 @@ import (
 
 const (
 	tagKeySeparator = "/"
+	cacheSizeMax    = 5000
 )
 
 var _ txindex.TxIndexer = (*TxIndex)(nil)
@@ -29,11 +32,16 @@ type TxIndex struct {
 	store        dbm.DB
 	tagsToIndex  []string
 	indexAllTags bool
+
+	logger   log.Logger
+	cache    map[string]types.TxResult
+	cacheMux sync.Mutex
 }
 
 // NewTxIndex creates new KV indexer.
 func NewTxIndex(store dbm.DB, options ...func(*TxIndex)) *TxIndex {
-	txi := &TxIndex{store: store, tagsToIndex: make([]string, 0), indexAllTags: false}
+	txi := &TxIndex{store: store, tagsToIndex: make([]string, 0), indexAllTags: false,
+		cache: make(map[string]types.TxResult)}
 	for _, o := range options {
 		o(txi)
 	}
@@ -54,11 +62,52 @@ func IndexAllTags() func(*TxIndex) {
 	}
 }
 
+func (txi *TxIndex) getFromCache(hash []byte) (types.TxResult, bool) {
+	txi.cacheMux.Lock()
+	defer txi.cacheMux.Unlock()
+	v, ok := txi.cache[string(hash)]
+	return v, ok
+}
+
+func (txi *TxIndex) removeFromCache(hash []byte) {
+	txi.cacheMux.Lock()
+	defer txi.cacheMux.Unlock()
+	if _, ok := txi.cache[string(hash)]; !ok {
+		if txi.logger != nil {
+			txi.logger.Error("[CachedTxIndexer] Removing non-existed hash")
+		} else {
+			fmt.Printf("%s\n", "[CachedTxIndexer] Removing non-existed hash")
+		}
+	}
+	delete(txi.cache, string(hash))
+}
+
+func (txi *TxIndex) Cache(result *types.TxResult) {
+	if result == nil {
+		return
+	}
+	txi.cacheMux.Lock()
+	defer txi.cacheMux.Unlock()
+	txi.cache[string(result.Tx.Hash())] = *result
+
+	if len(txi.cache) > cacheSizeMax {
+		if txi.logger != nil {
+			txi.logger.Error("TxIndexer cache size execeeds limit: %d", len(txi.cache))
+		} else {
+			fmt.Printf("TxIndexer cache size execeeds limit: %d\n", len(txi.cache))
+		}
+	}
+}
+
 // Get gets transaction from the TxIndex storage and returns it or nil if the
 // transaction is not found.
 func (txi *TxIndex) Get(hash []byte) (*types.TxResult, error) {
 	if len(hash) == 0 {
 		return nil, txindex.ErrorEmptyHash
+	}
+
+	if v, ok := txi.getFromCache(hash); ok {
+		return &v, nil
 	}
 
 	rawBytes := txi.store.Get(hash)
@@ -104,6 +153,12 @@ func (txi *TxIndex) AddBatch(b *txindex.Batch) error {
 	}
 
 	storeBatch.Write()
+
+	// persisted, remove from cache
+	for _, result := range b.Ops {
+		txi.removeFromCache(result.Tx.Hash())
+	}
+
 	return nil
 }
 

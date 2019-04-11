@@ -16,6 +16,8 @@ import (
 	cmn "github.com/tendermint/tendermint/libs/common"
 	dbm "github.com/tendermint/tendermint/libs/db"
 	"github.com/tendermint/tendermint/libs/log"
+	"github.com/tendermint/tendermint/state/txindex"
+	nulltxindexer "github.com/tendermint/tendermint/state/txindex/null"
 
 	"github.com/tendermint/tendermint/proxy"
 	sm "github.com/tendermint/tendermint/state"
@@ -203,6 +205,9 @@ type Handshaker struct {
 	genDoc       *types.GenesisDoc
 	logger       log.Logger
 
+	// indexer, null cacher if not set
+	txindexer txindex.TxIndexer
+
 	nBlocks int // number of blocks applied to the state
 }
 
@@ -216,12 +221,18 @@ func NewHandshaker(stateDB dbm.DB, state sm.State,
 		eventBus:     types.NopEventBus{},
 		genDoc:       genDoc,
 		logger:       log.NewNopLogger(),
+		txindexer:    &nulltxindexer.TxIndex{},
 		nBlocks:      0,
 	}
 }
 
 func (h *Handshaker) SetLogger(l log.Logger) {
 	h.logger = l
+}
+
+// SetTxIndexer - sets tx indexer, if not called, nulltxinders.
+func (h *Handshaker) SetTxIndexer(indexer txindex.TxIndexer) {
+	h.txindexer = indexer
 }
 
 // SetEventBus - sets the event bus for publishing block related events.
@@ -444,6 +455,9 @@ func (h *Handshaker) replayBlock(state sm.State, height int64, proxyApp proxy.Ap
 
 	blockExec := sm.NewBlockExecutor(h.stateDB, h.logger, proxyApp, sm.MockMempool{}, sm.MockEvidencePool{})
 	blockExec.SetEventBus(h.eventBus)
+
+	// XXX(yumin): setTxIndexer for cache is required as fullnodes hit this path.
+	blockExec.SetTxIndexer(h.txindexer)
 
 	var err error
 	state, err = blockExec.ApplyBlock(state, meta.BlockID, block)

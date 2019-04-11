@@ -13,6 +13,9 @@ var _ txindex.TxIndexer = (*TxIndex)(nil)
 // TxIndex acts as a /dev/null.
 type TxIndex struct{}
 
+// Cache noop
+func (txi *TxIndex) Cache(result *types.TxResult) {}
+
 // Get on a TxIndex is disabled and panics when invoked.
 func (txi *TxIndex) Get(hash []byte) (*types.TxResult, error) {
 	return nil, errors.New(`Indexing is disabled (set 'tx_index = "kv"' in config)`)

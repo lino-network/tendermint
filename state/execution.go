@@ -9,6 +9,8 @@ import (
 	"github.com/tendermint/tendermint/libs/fail"
 	"github.com/tendermint/tendermint/libs/log"
 	"github.com/tendermint/tendermint/proxy"
+	"github.com/tendermint/tendermint/state/txindex"
+	nulltxindexer "github.com/tendermint/tendermint/state/txindex/null"
 	"github.com/tendermint/tendermint/types"
 )
 
@@ -24,6 +26,9 @@ type BlockExecutor struct {
 
 	// execute the app against this
 	proxyApp proxy.AppConnConsensus
+
+	// indexer, null cacher if not set
+	txindexer txindex.TxIndexer
 
 	// events
 	eventBus types.BlockEventPublisher
@@ -50,13 +55,14 @@ func BlockExecutorWithMetrics(metrics *Metrics) BlockExecutorOption {
 // Call SetEventBus to provide one.
 func NewBlockExecutor(db dbm.DB, logger log.Logger, proxyApp proxy.AppConnConsensus, mempool Mempool, evpool EvidencePool, options ...BlockExecutorOption) *BlockExecutor {
 	res := &BlockExecutor{
-		db:       db,
-		proxyApp: proxyApp,
-		eventBus: types.NopEventBus{},
-		mempool:  mempool,
-		evpool:   evpool,
-		logger:   logger,
-		metrics:  NopMetrics(),
+		db:        db,
+		proxyApp:  proxyApp,
+		txindexer: &nulltxindexer.TxIndex{},
+		eventBus:  types.NopEventBus{},
+		mempool:   mempool,
+		evpool:    evpool,
+		logger:    logger,
+		metrics:   NopMetrics(),
 	}
 
 	for _, option := range options {
@@ -64,6 +70,11 @@ func NewBlockExecutor(db dbm.DB, logger log.Logger, proxyApp proxy.AppConnConsen
 	}
 
 	return res
+}
+
+// SetTxIndexer - sets tx indexer, if not called, nulltxinders.
+func (blockExec *BlockExecutor) SetTxIndexer(indexer txindex.TxIndexer) {
+	blockExec.txindexer = indexer
 }
 
 // SetEventBus - sets the event bus for publishing block related events.
@@ -148,6 +159,16 @@ func (blockExec *BlockExecutor) ApplyBlock(state State, blockID types.BlockID, b
 	state, err = updateState(state, blockID, &block.Header, abciResponses, validatorUpdates)
 	if err != nil {
 		return state, fmt.Errorf("Commit failed for application: %v", err)
+	}
+
+	// XXX(yumin): this must happen before Commit to cache txs.
+	for i, tx := range block.Data.Txs {
+		blockExec.txindexer.Cache(&types.TxResult{
+			Height: block.Height,
+			Index:  uint32(i),
+			Tx:     tx,
+			Result: *(abciResponses.DeliverTx[i]),
+		})
 	}
 
 	// Lock mempool, commit app state, update mempoool.

@@ -9,6 +9,8 @@ import (
 
 // TxIndexer interface defines methods to index and search transactions.
 type TxIndexer interface {
+	// cache a result in memory, will be removed later if persisted in AddBatch.
+	Cache(result *types.TxResult)
 
 	// AddBatch analyzes, indexes and stores a batch of transactions.
 	AddBatch(b *Batch) error

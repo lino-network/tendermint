@@ -79,6 +79,10 @@
   name = "github.com/jmhodges/levigo"
   version = "^1.0.0"
 
+[[constraint]]
+  name = "github.com/stumble/gorocksdb"
+  version = "^0.0.2"
+
 ###################################
 ## Repos which don't have releases.
 

@@ -110,6 +110,7 @@ func NewRocksDB(name string, dir string) (*RocksDB, error) {
 		ro:     ro,
 		wo:     wo,
 		woSync: woSync,
+		cache:  cache,
 		env:    env,
 	}
 	return database, nil
@@ -399,6 +400,9 @@ func (itr rocksDBIterator) assertIsValid() {
 // of an Iterator, because they are marked as freed.
 func moveSliceToBytes(s *gorocksdb.Slice) []byte {
 	defer s.Free()
+	if !s.Exists() {
+		return nil
+	}
 	v := make([]byte, len(s.Data()))
 	copy(v, s.Data())
 	return v

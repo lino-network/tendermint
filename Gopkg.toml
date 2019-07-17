@@ -81,7 +81,7 @@
 
 [[constraint]]
   name = "github.com/stumble/gorocksdb"
-  version = "^0.0.1"
+  version = "^0.0.2"
 
 ###################################
 ## Repos which don't have releases.

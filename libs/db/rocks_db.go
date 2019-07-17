@@ -88,10 +88,15 @@ func NewRocksDB(name string, dir string) (*RocksDB, error) {
 
 	// compression
 	// space ZSTDCompression < Zlib < LZ4
-	opts.SetCompression(gorocksdb.ZSTDCompression)
-	compressOpts := gorocksdb.NewDefaultCompressionOptions()
-	compressOpts.MaxDictBytes = 256 * 1024 // Dict max 256KB.
-	opts.SetCompressionOptions(compressOpts)
+	// c bindings does not have some options exported,
+	// e.g. like true for bottommost, and max_zstd_train_bytes.
+	// so we have to set it through here.
+	// allow up to 10 MB for zstd training.
+	opts, err := gorocksdb.GetOptionsFromString(opts,
+		`compression=kZSTD;compression_opts=-14:3:0:262144:10485760:true;`)
+	if err != nil {
+		panic(err)
+	}
 
 	// fd
 	opts.SetMaxOpenFiles(10 * 1024)
@@ -101,14 +106,6 @@ func NewRocksDB(name string, dir string) (*RocksDB, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// c bindings does not have this option exported,
-	// so we have to set it dynamically here.
-	// allow up to 10 MB for zstd training.
-	db.SetOptions(
-		[]string{"zstd_max_train_bytes", "bottommost_compression"},
-		[]string{"10485760", "kZSTD"})
-
 	ro := gorocksdb.NewDefaultReadOptions()
 	wo := gorocksdb.NewDefaultWriteOptions()
 	woSync := gorocksdb.NewDefaultWriteOptions()

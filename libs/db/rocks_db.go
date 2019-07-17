@@ -105,7 +105,9 @@ func NewRocksDB(name string, dir string) (*RocksDB, error) {
 	// c bindings does not have this option exported,
 	// so we have to set it dynamically here.
 	// allow up to 10 MB for zstd training.
-	db.SetOptions([]string{"zstd_max_train_bytes"}, []string{"10485760"})
+	db.SetOptions(
+		[]string{"zstd_max_train_bytes", "bottommost_compression"},
+		[]string{"10485760", "kZSTD"})
 
 	ro := gorocksdb.NewDefaultReadOptions()
 	wo := gorocksdb.NewDefaultWriteOptions()

@@ -90,10 +90,11 @@ func NewRocksDB(name string, dir string) (*RocksDB, error) {
 	// space ZSTDCompression < Zlib < LZ4
 	// c bindings does not have some options exported,
 	// e.g. like true for bottommost, and max_zstd_train_bytes.
-	// so we have to set it through here.
+	// so we have to set it through strings.
 	// allow up to 10 MB for zstd training.
 	opts, err := gorocksdb.GetOptionsFromString(opts,
-		`compression=kZSTD;compression_opts=-14:3:0:262144:10485760:true;`)
+		`compression=kZSTD;compression_opts=-14:3:0:262144:10485760:true;`+
+			`bottommost_compression=kZSTD;bottommost_compression_opts=-14:3:0:262144:10485760:true;`)
 	if err != nil {
 		panic(err)
 	}
